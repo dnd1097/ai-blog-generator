@@ -23,7 +23,7 @@ class BlogAgents:
         """Create the search agent for finding relevant articles"""
         return Agent(
             model=self.llm,
-            tools=[DuckDuckGoTools()],
+            tools=[DuckDuckGoTools(backend="api")],
             description=dedent("""\
          You are BlogResearch-X, an elite research assistant specializing in discovering
          high-quality sources for compelling blog content. Your expertise includes:
