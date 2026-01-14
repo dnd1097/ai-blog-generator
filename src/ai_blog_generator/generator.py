@@ -2,10 +2,12 @@ import json
 from textwrap import dedent
 from typing import Dict, Iterator, Optional
 
+from duckduckgo_search import DDGS
+
 from agno.utils.log import logger
 from agno.workflow import RunEvent, RunResponse, Workflow
 
-from ai_blog_generator.response_model import ScrapedArticle, SearchResults
+from ai_blog_generator.response_model import NewsArticle, ScrapedArticle, SearchResults
 
 
 class BlogPostGenerator(Workflow):
@@ -21,25 +23,33 @@ class BlogPostGenerator(Workflow):
 
     def __init__(self, blog_agents, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.searcher = blog_agents.searcher_agent
         self.article_scraper = blog_agents.article_scraper_agent
         self.writer = blog_agents.writer_agent
 
+    def _search_with_duckduckgo(self, topic: str, max_results: int = 12) -> SearchResults:
+        query = f"{topic} insights analysis"
+        articles: list[NewsArticle] = []
+        seen_urls: set[str] = set()
+        with DDGS() as ddgs:
+            for result in ddgs.text(query, max_results=max_results):
+                url = result.get("href") or result.get("url")
+                title = result.get("title") or result.get("heading")
+                summary = result.get("body") or result.get("snippet") or result.get("description")
+                if not url or not title or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                articles.append(NewsArticle(title=title, url=url, summary=summary))
+        return SearchResults(articles=articles[:7])
+
     def get_search_results(self, topic: str, num_attempts: int = 3) -> Optional[SearchResults]:
-        # Use the searcher to find the latest articles
         for attempt in range(num_attempts):
             try:
-                searcher_response: RunResponse = self.searcher.run(topic)
-                if (
-                    searcher_response is not None
-                    and searcher_response.content is not None
-                    and isinstance(searcher_response.content, SearchResults)
-                ):
-                    article_count = len(searcher_response.content.articles)
+                search_results = self._search_with_duckduckgo(topic)
+                article_count = len(search_results.articles)
+                if article_count > 0:
                     logger.info(f"Found {article_count} articles on attempt {attempt + 1}")
-                    return searcher_response.content
-                else:
-                    logger.warning(f"Attempt {attempt + 1}/{num_attempts} failed: Invalid response type")
+                    return search_results
+                logger.warning(f"Attempt {attempt + 1}/{num_attempts} failed: No articles found")
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1}/{num_attempts} failed: {str(e)}")
 
