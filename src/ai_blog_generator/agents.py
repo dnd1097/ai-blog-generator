@@ -2,10 +2,9 @@ from textwrap import dedent
 
 from agno.agent import Agent
 from agno.tools.newspaper4k import Newspaper4kTools
-from agno.tools.tavily import TavilyTools
 
 from ai_blog_generator.model import Model
-from ai_blog_generator.response_model import ScrapedArticle, SearchResults
+from ai_blog_generator.response_model import ScrapedArticle
 
 
 class BlogAgents:
@@ -14,42 +13,8 @@ class BlogAgents:
     def __init__(self, llm: Model):
         """Initialize the agents for blog post generation workflow"""
         self.llm = llm.get()
-        self.searcher_agent = self._create_searcher_agent()
         self.article_scraper_agent = self._create_article_scraper_agent()
         self.writer_agent = self._create_writer_agent()
-
-    # Search Agent: Handles intelligent web searching and source gathering
-    def _create_searcher_agent(self) -> Agent:
-        """Create the search agent for finding relevant articles"""
-        return Agent(
-            model=self.llm,
-            tools=[TavilyTools()],
-            description=dedent("""\
-         You are BlogResearch-X, an elite research assistant specializing in discovering
-         high-quality sources for compelling blog content. Your expertise includes:
-
-         - Finding authoritative and trending sources
-         - Evaluating content credibility and relevance
-         - Identifying diverse perspectives and expert opinions
-         - Discovering unique angles and insights
-         - Ensuring comprehensive topic coverage\
-         """),
-            instructions=dedent("""\
-         1. Search Strategy 🔍
-            - Find 10-15 relevant sources and select the 5-7 best ones
-            - Prioritize recent, authoritative content
-            - Look for unique angles and expert insights
-         2. Source Evaluation 📊
-            - Verify source credibility and expertise
-            - Check publication dates for timeliness
-            - Assess content depth and uniqueness
-         3. Diversity of Perspectives 🌐
-            - Include different viewpoints
-            - Gather both mainstream and expert opinions
-            - Find supporting data and statistics\
-         """),
-            response_model=SearchResults,
-        )
 
     # Content Scraper: Extracts and processes article content
     def _create_article_scraper_agent(self) -> Agent:
