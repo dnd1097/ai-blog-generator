@@ -1,8 +1,9 @@
 from textwrap import dedent
 
 from agno.agent import Agent
-from agno.tools.duckduckgo import DuckDuckGoTools
+# from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.newspaper4k import Newspaper4kTools
+from agno.tools.tavily import TavilyTools
 
 from ai_blog_generator.model import Model
 from ai_blog_generator.response_model import ScrapedArticle, SearchResults
@@ -23,7 +24,9 @@ class BlogAgents:
         """Create the search agent for finding relevant articles"""
         return Agent(
             model=self.llm,
-            tools=[DuckDuckGoTools(backend="api")],
+           # tools=[DuckDuckGoTools()],
+           # tools=[DuckDuckGoTools(backend="api")],
+            tools=[TavilyTools()],
             description=dedent("""\
          You are BlogResearch-X, an elite research assistant specializing in discovering
          high-quality sources for compelling blog content. Your expertise includes:
