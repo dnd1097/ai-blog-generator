@@ -8,7 +8,7 @@ from urllib.parse import quote_plus
 from urllib.request import urlopen
 
 from agno.utils.log import logger
-from agno.workflow import RunEvent, RunResponse, Workflow
+from agno.workflow import RunResponse, Workflow
 
 from ai_blog_generator.response_model import NewsArticle, ScrapedArticle, SearchResults
 
@@ -100,7 +100,6 @@ class BlogPostGenerator(Workflow):
         # If no search_results are found for the topic, end the workflow
         if search_results is None or len(search_results.articles) == 0:
             yield RunResponse(
-                event=RunEvent.workflow_completed,
                 content=f"Sorry, could not find any articles on the topic: {topic}",
             )
             return
