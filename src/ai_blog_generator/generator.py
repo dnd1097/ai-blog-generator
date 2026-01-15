@@ -7,6 +7,8 @@ from typing import Dict, Iterator, Optional
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
+from duckduckgo_search import DDGS
+
 from agno.utils.log import logger
 from agno.workflow import RunEvent, RunResponse, Workflow
 
@@ -54,12 +56,26 @@ class BlogPostGenerator(Workflow):
             if len(articles) >= max_results:
                 break
 
+    def _search_with_duckduckgo(self, topic: str, max_results: int = 12) -> SearchResults:
+        query = f"{topic} insights analysis"
+        articles: list[NewsArticle] = []
+        seen_urls: set[str] = set()
+        with DDGS() as ddgs:
+            for result in ddgs.text(query, max_results=max_results):
+                url = result.get("href") or result.get("url")
+                title = result.get("title") or result.get("heading")
+                summary = result.get("body") or result.get("snippet") or result.get("description")
+                if not url or not title or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                articles.append(NewsArticle(title=title, url=url, summary=summary))
         return SearchResults(articles=articles[:7])
 
     def get_search_results(self, topic: str, num_attempts: int = 3) -> Optional[SearchResults]:
         for attempt in range(num_attempts):
             try:
                 search_results = self._search_google_news_rss(topic)
+                search_results = self._search_with_duckduckgo(topic)
                 article_count = len(search_results.articles)
                 if article_count > 0:
                     logger.info(f"Found {article_count} articles on attempt {attempt + 1}")
