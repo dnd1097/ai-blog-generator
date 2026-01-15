@@ -104,7 +104,7 @@ class BlogPostGenerator(Workflow):
                 logger.info(f"Found scraped article in cache: {article.url}")
                 continue
 
-            article_scraper_response: RunResponse = self.article_scraper.run(article.url)
+            article_scraper_response: RunResponse = self.article_scraper.run(article)
             if (
                 article_scraper_response is not None
                 and article_scraper_response.content is not None
@@ -112,6 +112,10 @@ class BlogPostGenerator(Workflow):
             ):
                 scraped_articles[article_scraper_response.content.url] = article_scraper_response.content
                 logger.info(f"Scraped article: {article_scraper_response.content.url}")
+                if not article_scraper_response.content.content:
+                    logger.warning(f"No readable content found for article: {article.url}")
+            else:
+                logger.warning(f"Skipping article due to scrape failure: {article.url}")
         return scraped_articles
 
     def run(
@@ -132,6 +136,17 @@ class BlogPostGenerator(Workflow):
 
         # Scrape the search results
         scraped_articles: Dict[str, ScrapedArticle] = self.scrape_articles(topic, search_results)
+        if not scraped_articles:
+            logger.warning("No articles scraped successfully. Falling back to RSS summaries only.")
+            scraped_articles = {
+                article.url: ScrapedArticle(
+                    title=article.title,
+                    url=article.url,
+                    summary=article.summary,
+                    content=None,
+                )
+                for article in search_results.articles
+            }
 
         # Prepare the input for the writer
         writer_input = {
