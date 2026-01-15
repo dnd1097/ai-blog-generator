@@ -7,8 +7,6 @@ from typing import Dict, Iterator, Optional
 from urllib.parse import quote_plus
 from urllib.request import urlopen
 
-from duckduckgo_search import DDGS
-
 from agno.utils.log import logger
 from agno.workflow import RunEvent, RunResponse, Workflow
 
@@ -30,21 +28,6 @@ class BlogPostGenerator(Workflow):
         super().__init__(*args, **kwargs)
         self.article_scraper = blog_agents.article_scraper_agent
         self.writer = blog_agents.writer_agent
-
-    def _search_with_duckduckgo(self, topic: str, max_results: int = 12) -> SearchResults:
-        query = f"{topic} insights analysis"
-        articles: list[NewsArticle] = []
-        seen_urls: set[str] = set()
-        with DDGS() as ddgs:
-            for result in ddgs.text(query, max_results=max_results):
-                url = result.get("href") or result.get("url")
-                title = result.get("title") or result.get("heading")
-                summary = result.get("body") or result.get("snippet") or result.get("description")
-                if not url or not title or url in seen_urls:
-                    continue
-                seen_urls.add(url)
-                articles.append(NewsArticle(title=title, url=url, summary=summary))
-        return SearchResults(articles=articles[:7])
 
     def _search_google_news_rss(self, topic: str, max_results: int = 10) -> SearchResults:
         query = quote_plus(topic)
@@ -76,34 +59,14 @@ class BlogPostGenerator(Workflow):
     def get_search_results(self, topic: str, num_attempts: int = 3) -> Optional[SearchResults]:
         for attempt in range(num_attempts):
             try:
-                search_results = self._search_with_duckduckgo(topic)
+                search_results = self._search_google_news_rss(topic)
                 article_count = len(search_results.articles)
                 if article_count > 0:
                     logger.info(f"Found {article_count} articles on attempt {attempt + 1}")
                     return search_results
                 logger.warning(f"Attempt {attempt + 1}/{num_attempts} failed: No articles found")
-                logger.info("Falling back to Google News RSS search")
-                fallback_results = self._search_google_news_rss(topic)
-                if fallback_results.articles:
-                    logger.info(
-                        "Found %s articles via Google News RSS",
-                        len(fallback_results.articles),
-                    )
-                    return fallback_results
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1}/{num_attempts} failed: {str(e)}")
-                if "ratelimit" in str(e).lower():
-                    logger.info("DuckDuckGo rate limited. Falling back to Google News RSS search.")
-                    try:
-                        fallback_results = self._search_google_news_rss(topic)
-                        if fallback_results.articles:
-                            logger.info(
-                                "Found %s articles via Google News RSS",
-                                len(fallback_results.articles),
-                            )
-                            return fallback_results
-                    except Exception as fallback_error:
-                        logger.warning(f"Google News RSS fallback failed: {fallback_error}")
                 time.sleep(min(2 * (attempt + 1), 5))
 
         logger.error(f"Failed to get search results after {num_attempts} attempts")
