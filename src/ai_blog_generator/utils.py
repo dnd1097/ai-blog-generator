@@ -26,4 +26,9 @@ custom_css = """
     font-size: 36px !important;
     font-weight: bold;
 }
+.top-right {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+}
 """

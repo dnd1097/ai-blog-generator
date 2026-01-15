@@ -28,7 +28,37 @@ class BlogPostGenerator(Workflow):
     def __init__(self, blog_agents, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.article_scraper = blog_agents.article_scraper_agent
+        self.query_planner = blog_agents.query_planner_agent
         self.writer = blog_agents.writer_agent
+
+    def _sanitize_user_text(self, text: str, max_length: int = 1200) -> str:
+        cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text or "")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned[:max_length]
+
+    def _should_use_query_planner(self, raw_topic: str) -> bool:
+        return len(raw_topic) > 120 or "\n" in raw_topic or raw_topic.count(".") > 1
+
+    def _build_search_query(self, raw_topic: str, cleaned_topic: str, style_guidelines: str) -> str:
+        if not self.query_planner or not self._should_use_query_planner(raw_topic):
+            return cleaned_topic
+        try:
+            planner_input = json.dumps(
+                {
+                    "topic": cleaned_topic,
+                    "style_guidelines": style_guidelines,
+                },
+                indent=2,
+            )
+            response: RunResponse = self.query_planner.run(planner_input)
+            if response and response.content:
+                query = self._sanitize_user_text(str(response.content), max_length=200)
+                query = query.strip().strip('"')
+                if query:
+                    return query
+        except Exception as exc:
+            logger.warning(f"Failed to generate search query: {exc}")
+        return cleaned_topic
 
     def _search_google_news_rss(self, topic: str, max_results: int = 10) -> SearchResults:
         query = quote_plus(topic)
@@ -121,21 +151,30 @@ class BlogPostGenerator(Workflow):
     def run(
         self,
         topic: str,
+        style_guidelines: Optional[str] = None,
+        include_sources: bool = True,
     ) -> Iterator[RunResponse]:
         """Run the blog post generation workflow."""
-        logger.info(f"Generating a blog post on: {topic}")
+        raw_topic = topic or ""
+        cleaned_topic = self._sanitize_user_text(raw_topic, max_length=600)
+        if not cleaned_topic:
+            yield RunResponse(content="Please provide a topic or some ideas to get started.")
+            return
+        cleaned_guidelines = self._sanitize_user_text(style_guidelines or "", max_length=1500)
+        logger.info(f"Generating a blog post on: {cleaned_topic}")
 
         # Search the web for articles on the topic
-        search_results: Optional[SearchResults] = self.get_search_results(topic)
+        search_query = self._build_search_query(raw_topic, cleaned_topic, cleaned_guidelines)
+        search_results: Optional[SearchResults] = self.get_search_results(search_query)
         # If no search_results are found for the topic, end the workflow
         if search_results is None or len(search_results.articles) == 0:
             yield RunResponse(
-                content=f"Sorry, could not find any articles on the topic: {topic}",
+                content=f"Sorry, could not find any articles on the topic: {cleaned_topic}",
             )
             return
 
         # Scrape the search results
-        scraped_articles: Dict[str, ScrapedArticle] = self.scrape_articles(topic, search_results)
+        scraped_articles: Dict[str, ScrapedArticle] = self.scrape_articles(cleaned_topic, search_results)
         if not scraped_articles:
             logger.warning("No articles scraped successfully. Falling back to RSS summaries only.")
             scraped_articles = {
@@ -150,7 +189,9 @@ class BlogPostGenerator(Workflow):
 
         # Prepare the input for the writer
         writer_input = {
-            "topic": topic,
+            "topic": cleaned_topic,
+            "style_guidelines": cleaned_guidelines,
+            "include_sources": include_sources,
             "articles": [v.model_dump() for v in scraped_articles.values()],
         }
 
