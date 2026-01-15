@@ -5,7 +5,8 @@ import time
 from textwrap import dedent
 from typing import Dict, Iterator, Optional
 from urllib.parse import quote_plus
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
+from xml.etree import ElementTree
 
 from agno.utils.log import logger
 from agno.workflow import RunResponse, Workflow
@@ -32,28 +33,53 @@ class BlogPostGenerator(Workflow):
     def _search_google_news_rss(self, topic: str, max_results: int = 10) -> SearchResults:
         query = quote_plus(topic)
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
-        with urlopen(url, timeout=10) as response:
+        request = Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; AI-Blog-Generator/1.0; +https://example.com)"
+            },
+        )
+        with urlopen(request, timeout=10) as response:
             feed = response.read().decode("utf-8")
 
-        items = re.findall(r"<item>(.*?)</item>", feed, flags=re.DOTALL)
         articles: list[NewsArticle] = []
         seen_urls: set[str] = set()
-
-        for item in items:
-            title_match = re.search(r"<title><!\\[CDATA\\[(.*?)\\]\\]></title>", item)
-            link_match = re.search(r"<link>(.*?)</link>", item)
-            desc_match = re.search(r"<description><!\\[CDATA\\[(.*?)\\]\\]></description>", item)
-            title = html.unescape(title_match.group(1)).strip() if title_match else None
-            url = link_match.group(1).strip() if link_match else None
-            summary_raw = html.unescape(desc_match.group(1)).strip() if desc_match else None
-            summary = re.sub(r"<[^>]+>", "", summary_raw).strip() if summary_raw else None
-            if not url or not title or url in seen_urls:
-                continue
-            seen_urls.add(url)
-            articles.append(NewsArticle(title=title, url=url, summary=summary))
-            if len(articles) >= max_results:
-                break
-        return SearchResults(articles=articles[:7])
+        try:
+            root = ElementTree.fromstring(feed)
+            items = root.findall(".//item")
+            for item in items:
+                title = item.findtext("title")
+                link = item.findtext("link")
+                description = item.findtext("description")
+                if not title or not link:
+                    continue
+                title = html.unescape(title).strip()
+                url = link.strip()
+                summary_raw = html.unescape(description).strip() if description else None
+                summary = re.sub(r"<[^>]+>", "", summary_raw).strip() if summary_raw else None
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                articles.append(NewsArticle(title=title, url=url, summary=summary))
+                if len(articles) >= max_results:
+                    break
+        except ElementTree.ParseError:
+            items = re.findall(r"<item>(.*?)</item>", feed, flags=re.DOTALL)
+            for item in items:
+                title_match = re.search(r"<title><!\\[CDATA\\[(.*?)\\]\\]></title>", item)
+                link_match = re.search(r"<link>(.*?)</link>", item)
+                desc_match = re.search(r"<description><!\\[CDATA\\[(.*?)\\]\\]></description>", item)
+                title = html.unescape(title_match.group(1)).strip() if title_match else None
+                url = link_match.group(1).strip() if link_match else None
+                summary_raw = html.unescape(desc_match.group(1)).strip() if desc_match else None
+                summary = re.sub(r"<[^>]+>", "", summary_raw).strip() if summary_raw else None
+                if not url or not title or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                articles.append(NewsArticle(title=title, url=url, summary=summary))
+                if len(articles) >= max_results:
+                    break
+        return SearchResults(articles=articles[:max_results])
 
     def get_search_results(self, topic: str, num_attempts: int = 3) -> Optional[SearchResults]:
         for attempt in range(num_attempts):
