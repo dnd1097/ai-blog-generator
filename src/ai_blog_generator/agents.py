@@ -1,10 +1,41 @@
 from textwrap import dedent
 
+from newspaper import Article
+
 from agno.agent import Agent
-from agno.tools.newspaper4k import Newspaper4kTools
+from agno.workflow import RunResponse
 
 from ai_blog_generator.model import Model
-from ai_blog_generator.response_model import ScrapedArticle
+from ai_blog_generator.response_model import NewsArticle, ScrapedArticle
+
+
+class ArticleScraperAgent:
+    """Scrapes article content without invoking LLM tool calls."""
+
+    def run(self, article: NewsArticle) -> RunResponse:
+        try:
+            parsed_article = Article(article.url)
+            parsed_article.download()
+            parsed_article.parse()
+            title = parsed_article.title.strip() if parsed_article.title else article.title
+            content = parsed_article.text.strip() if parsed_article.text else None
+            scraped_article = ScrapedArticle(
+                title=title,
+                url=article.url,
+                summary=article.summary,
+                content=content,
+            )
+            return RunResponse(content=scraped_article)
+        except Exception as exc:
+            return RunResponse(
+                content=ScrapedArticle(
+                    title=article.title,
+                    url=article.url,
+                    summary=article.summary,
+                    content=None,
+                ),
+                error=str(exc),
+            )
 
 
 class BlogAgents:
@@ -19,36 +50,7 @@ class BlogAgents:
     # Content Scraper: Extracts and processes article content
     def _create_article_scraper_agent(self) -> Agent:
         """Create the article scraper agent for extracting content from articles"""
-        return Agent(
-            model=self.llm,
-            tools=[Newspaper4kTools()],
-            description=dedent("""\
-         You are ContentBot-X, a specialist in extracting and processing digital content
-         for blog creation. Your expertise includes:
-
-         - Efficient content extraction
-         - Smart formatting and structuring
-         - Key information identification
-         - Quote and statistic preservation
-         - Maintaining source attribution\
-         """),
-            instructions=dedent("""\
-         1. Content Extraction 📑
-            - Extract content from the article
-            - Preserve important quotes and statistics
-            - Maintain proper attribution
-            - Handle paywalls gracefully
-         2. Content Processing 🔄
-            - Format text in clean markdown
-            - Preserve key information
-            - Structure content logically
-         3. Quality Control ✅
-            - Verify content relevance
-            - Ensure accurate extraction
-            - Maintain readability\
-         """),
-            response_model=ScrapedArticle,
-        )
+        return ArticleScraperAgent()
 
     # Content Writer Agent: Crafts engaging blog posts from research
     def _create_writer_agent(self) -> Agent:
